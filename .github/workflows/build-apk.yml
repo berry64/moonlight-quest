@@ -1,15 +1,24 @@
 name: Build APK
 
-# Builds the Moonlight APKs on GitHub's free hosted Linux runners and uploads them
-# as downloadable artifacts. Runs on push, PR, and on-demand (Actions tab -> Run
-# workflow). Everything this build needs is public (Maven Central / Google /
-# gradlePluginPortal for the Meta Spatial SDK), so no secrets or credentials are
-# required.
+# Builds the Moonlight APKs on GitHub's free hosted Linux runners.
 #
-# Download built APKs from: the workflow run page -> "Artifacts" section.
+# - On every push to master: builds both flavors AND publishes a GitHub Release
+#   with the APKs attached (see the `release` job).
+# - On pull requests / manual dispatch: builds + uploads APKs as run artifacts
+#   (no release).
+#
+# Versioning of releases: <major>.<secondary>.<commit-count>
+#   - major + secondary come from `versionName` in app/build.gradle (e.g. "12.1").
+#     Bump those in code to control the first two numbers.
+#   - the third number is the git commit count, so it bumps on every new commit.
+#
+# Everything the build needs is public (Maven Central / Google / gradlePluginPortal
+# for the Meta Spatial SDK), so no secrets beyond the automatic GITHUB_TOKEN.
 
 on:
   push:
+    # Build + release on pushes to the fork's default/working branch. Add 'master'
+    # here too if you later merge the VR work there and want releases from it.
     branches: [ feature/quest-vr ]
   pull_request:
   workflow_dispatch:        # lets you trigger a build manually from the Actions tab
@@ -68,7 +77,7 @@ jobs:
         # avoids reusing a stale daemon from a cached, mismatched toolchain.
         run: ./gradlew ${{ matrix.task }} --stacktrace --no-daemon
 
-      - name: Upload APK
+      - name: Upload APK artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
@@ -76,3 +85,72 @@ jobs:
           path: ${{ matrix.apk_glob }}
           if-no-files-found: error
           retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Publish a GitHub Release with the built APKs. Runs only for pushes to the
+  # branch(es) above, after the build job. `always()` lets it publish whatever
+  # built even if one matrix leg failed (fail-fast is off), as long as at least
+  # one APK exists.
+  # ---------------------------------------------------------------------------
+  release:
+    name: release
+    needs: build
+    if: always() && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # required to create releases and tags
+    steps:
+      - name: Checkout (full history for commit count)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # git rev-list --count needs the whole history
+
+      - name: Compute version
+        id: version
+        # <major>.<secondary> come from versionName in app/build.gradle (e.g. "12.1").
+        # The third number is the git commit count, so it bumps on every new commit
+        # with no stored state. Prefer a small per-run counter instead? Replace
+        # `$(git rev-list --count HEAD)` with `${{ github.run_number }}`.
+        run: |
+          BASE=$(grep -oP 'versionName\s+"\K[0-9.]+' app/build.gradle | head -1)
+          COUNT=$(git rev-list --count HEAD)
+          echo "version=${BASE}.${COUNT}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${BASE}.${COUNT}" >> "$GITHUB_OUTPUT"
+          echo "Release version: ${BASE}.${COUNT}"
+
+      - name: Download built APKs
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts     # each artifact lands in artifacts/<artifact-name>/
+
+      - name: Stage APKs with versioned names
+        id: stage
+        run: |
+          mkdir -p dist
+          VER="${{ steps.version.outputs.version }}"
+          cp artifacts/moonlight-quest-debug/*.apk  "dist/moonlight-quest-${VER}.apk"  2>/dev/null || true
+          cp artifacts/moonlight-mobile-debug/*.apk "dist/moonlight-mobile-${VER}.apk" 2>/dev/null || true
+          ls -l dist || true
+          if ls dist/*.apk >/dev/null 2>&1; then
+            echo "have_apks=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No APKs were produced; skipping release."
+            echo "have_apks=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create / update GitHub Release
+        if: steps.stage.outputs.have_apks == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # Re-run of the same commit: replace the attached APKs.
+            gh release upload "$TAG" dist/*.apk --clobber
+          else
+            gh release create "$TAG" dist/*.apk \
+              --target "${{ github.sha }}" \
+              --title "Moonlight Quest $TAG (debug)" \
+              --generate-notes \
+              --prerelease
+          fi
