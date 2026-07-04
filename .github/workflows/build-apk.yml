@@ -2,8 +2,8 @@ name: Build APK
 
 # Builds the Moonlight APKs on GitHub's free hosted Linux runners.
 #
-# - On every push to master: builds both flavors AND publishes a GitHub Release
-#   with the APKs attached (see the `release` job).
+# - On every push to feature/quest-vr (the branch this work lives on): builds both
+#   flavors AND publishes a GitHub Release with the APKs attached (see `release`).
 # - On pull requests / manual dispatch: builds + uploads APKs as run artifacts
 #   (no release).
 #
