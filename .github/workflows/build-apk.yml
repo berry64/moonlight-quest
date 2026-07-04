@@ -64,7 +64,9 @@ jobs:
           restore-keys: gradle-${{ runner.os }}-
 
       - name: Build ${{ matrix.task }}
-        run: ./gradlew ${{ matrix.task }} --stacktrace
+        # --no-daemon: CI is one-shot, so the Gradle/Kotlin daemon gives no benefit and
+        # avoids reusing a stale daemon from a cached, mismatched toolchain.
+        run: ./gradlew ${{ matrix.task }} --stacktrace --no-daemon
 
       - name: Upload APK
         if: success()

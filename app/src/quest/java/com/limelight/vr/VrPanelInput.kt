@@ -19,9 +19,11 @@ import com.meta.spatial.toolkit.SceneObjectSystem
  * Grabbing/moving the panel (grip) is handled by the panel's Grabbable component, and
  * resizing by [VrResizeSystem]; neither is handled here.
  *
- * NOTE (SDK seam): the exact way a [HitInfo] exposes the hit location in panel-local
- * UV space can vary between Spatial SDK versions. That conversion is isolated in
- * [hitInfoToUv] so it is the single place to adjust if the installed SDK differs.
+ * This class only forwards the raw world-space hit point + button state to the
+ * activity. The hit-point -> normalized-panel-UV conversion lives in
+ * [VrGameActivity.onPanelHit], where the panel's live Transform/Scale and physical
+ * dimensions are known. (HitInfo in Spatial SDK 0.13.x exposes the hit `point` in
+ * world space, not a UV.)
  */
 object VrPanelInput {
 
@@ -53,56 +55,22 @@ object VrPanelInput {
                     clicked: Int,
                     downTime: Long
                 ): Boolean {
-                    // 1) Move the host cursor to wherever the pointer is hitting the
-                    //    panel. onInput fires while pointing at/interacting with the
-                    //    panel, so this keeps the host cursor under the laser.
-                    val uv = hitInfoToUv(hitInfo)
-                    if (uv != null) {
-                        activity.onPanelPointerMove(uv[0], uv[1])
-                    }
-
-                    // 2) Trigger -> left click (press on rising edge, release on
-                    //    falling edge). We pass the current pressed state; the
-                    //    activity converts it to press/release edges.
                     val triggerPressed = (clicked and TRIGGER_BITS) != 0
-                    activity.onPanelTrigger(triggerPressed)
+                    val secondaryEdge =
+                        (changed and SECONDARY_BITS) != 0 && (clicked and SECONDARY_BITS) != 0
 
-                    // 3) B/Y -> right click, but only on the rising edge.
-                    if ((changed and SECONDARY_BITS) != 0 && (clicked and SECONDARY_BITS) != 0) {
-                        activity.onPanelSecondaryClick()
-                    }
+                    // Hand the world-space hit point + button state to the activity,
+                    // which converts it to a normalized panel position and forwards it
+                    // to the host input path. onInput fires while pointing at/
+                    // interacting with the panel, so this keeps the host cursor under
+                    // the laser.
+                    activity.onPanelHit(hitInfo.point, triggerPressed, secondaryEdge)
 
-                    // Returning false lets the SDK keep processing (e.g. so grip-grab
-                    // and the pointer visuals still work); we only observe input.
+                    // Returning false lets the SDK keep processing (grip-grab, pointer
+                    // visuals, etc.); we only observe input.
                     return false
                 }
             })
-        }
-    }
-
-    /**
-     * Convert a panel [HitInfo] to normalized panel coordinates in [0,1], origin
-     * top-left, x to the right, y downward (matching Android view coordinates that
-     * the Moonlight host-input path expects).
-     *
-     * SDK seam: this uses the hit info's UV if the SDK provides one. If a given SDK
-     * version instead exposes only a world/local hit point, derive UV from the panel
-     * shape here. Returns null if no usable hit location is available this frame.
-     */
-    private fun hitInfoToUv(hitInfo: HitInfo): FloatArray? {
-        return try {
-            // Spatial SDK HitInfo exposes the hit location on the panel. The uv is
-            // reported with origin at the bottom-left in GL convention, so flip Y to
-            // get the top-left origin the host expects.
-            val u = hitInfo.uv.x
-            val v = 1f - hitInfo.uv.y
-            floatArrayOf(u, v)
-        } catch (t: Throwable) {
-            // If this SDK version doesn't expose .uv, this is the single place to map
-            // hitInfo.point (world space) into panel-local UV using the panel's
-            // Transform + QuadShapeOptions dimensions.
-            LimeLog.warning("VrPanelInput: could not read hit UV: " + t.message)
-            null
         }
     }
 }

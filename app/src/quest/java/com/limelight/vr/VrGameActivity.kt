@@ -39,9 +39,11 @@ import com.meta.spatial.toolkit.Grabbable
 import com.meta.spatial.toolkit.GrabbableType
 import com.meta.spatial.toolkit.MediaPanelRenderOptions
 import com.meta.spatial.toolkit.MediaPanelSettings
+import com.meta.spatial.toolkit.Panel
 import com.meta.spatial.toolkit.PanelRegistration
 import com.meta.spatial.toolkit.PixelDisplayOptions
 import com.meta.spatial.toolkit.QuadShapeOptions
+import com.meta.spatial.toolkit.Scale
 import com.meta.spatial.toolkit.Transform
 import com.meta.spatial.toolkit.VideoSurfacePanelRegistration
 import com.meta.spatial.toolkit.Visible
@@ -337,8 +339,10 @@ class VrGameActivity : AppSystemActivity(), NvConnectionListener, GameGestures {
             Vector3(0f, INITIAL_PANEL_HEIGHT_METERS, -INITIAL_PANEL_DISTANCE_METERS),
             Quaternion(0f, 0f, 0f)
         )
-        videoPanelEntity = Entity.createPanelEntity(
-            VIDEO_PANEL_ID,
+        // Use Entity.create(Panel(id), ...) — the form the MediaPlayerSample uses. The
+        // Panel component links to the registration by id; Grabbable gives grab-to-move.
+        videoPanelEntity = Entity.create(
+            Panel(VIDEO_PANEL_ID),
             Transform(initialPose),
             Grabbable(true, GrabbableType.FACE),
             Visible(true)
@@ -353,6 +357,63 @@ class VrGameActivity : AppSystemActivity(), NvConnectionListener, GameGestures {
     // ------------------------------------------------------------------
     // Controller pointer -> host mouse/touch (called by VrPanelInput)
     // ------------------------------------------------------------------
+
+    /**
+     * Handle a laser hit on the panel. [worldPoint] is the world-space intersection
+     * point from HitInfo. We convert it to normalized panel UV (origin top-left, y
+     * down) using the panel's live pose + physical size, then forward pointer moves
+     * and clicks to the host.
+     *
+     * Called on the Spatial SDK input thread; NvConnection send methods are
+     * thread-safe (they enqueue into moonlight-common), matching how the phone build
+     * calls them from the input thread.
+     */
+    fun onPanelHit(worldPoint: Vector3, triggerPressed: Boolean, secondaryEdge: Boolean) {
+        val uv = worldPointToPanelUv(worldPoint)
+        if (uv != null) {
+            onPanelPointerMove(uv[0], uv[1])
+        }
+        onPanelTrigger(triggerPressed)
+        if (secondaryEdge) {
+            onPanelSecondaryClick()
+        }
+    }
+
+    /**
+     * Convert a world-space point on the panel plane to normalized panel coordinates
+     * in [0,1], origin top-left, x right, y down.
+     *
+     * Method: bring the world point into the panel's local frame by applying the
+     * inverse of the panel pose (local = conj(q) * (world - t)), then map local X/Y
+     * against the panel's half-extents. Panel local space has +X right and +Y up with
+     * the origin at the panel center, so u = localX/width + 0.5 and, flipping Y for
+     * the top-left origin the host expects, v = 0.5 - localY/height.
+     */
+    private fun worldPointToPanelUv(worldPoint: Vector3): FloatArray? {
+        val entity = videoPanelEntity ?: return null
+        val transform = entity.tryGetComponent<Transform>() ?: return null
+        val pose = transform.transform
+        val scale = entity.tryGetComponent<Scale>()?.scale?.x ?: 1f
+
+        // Effective physical size of the quad (meters), including the resize scale.
+        val width = DEFAULT_PANEL_HEIGHT_METERS * aspectRatio() * scale
+        val height = DEFAULT_PANEL_HEIGHT_METERS * scale
+        if (width <= 0f || height <= 0f) return null
+
+        // local = inverse(orientation) * (worldPoint - position).
+        // This is the same world->local idiom the PremiumMediaSample uses:
+        //   val localPoint = boxRotation.inverse() * (point - boxCenter)
+        val rel = Vector3(
+            worldPoint.x - pose.t.x,
+            worldPoint.y - pose.t.y,
+            worldPoint.z - pose.t.z
+        )
+        val local = pose.q.inverse() * rel
+
+        val u = local.x / width + 0.5f
+        val v = 0.5f - local.y / height
+        return floatArrayOf(u, v)
+    }
 
     /**
      * Forward an absolute pointer position on the panel to the host. [u],[v] are

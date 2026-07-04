@@ -52,7 +52,7 @@ failure in a headless env is the missing Android SDK location.
 | Component | Version | Where it's set |
 |---|---|---|
 | Meta Spatial SDK | **0.13.1** | `ext.spatialSdkVersion` (root `build.gradle`) + `questImplementation` deps |
-| Kotlin | **2.1.0** | `ext.kotlinVersion` (root `build.gradle`) |
+| Kotlin | **2.4.0** | `ext.kotlinVersion` (root `build.gradle`) |
 | Android Gradle Plugin | **8.11.1** | root `build.gradle` classpath |
 | Gradle wrapper | **9.4.1** | `gradle/wrapper/gradle-wrapper.properties` |
 | JDK (to run Gradle) | **17** | your machine / `setup-and-build.ps1` |
@@ -60,6 +60,13 @@ failure in a headless env is the missing Android SDK location.
 These MUST move together — bumping the Spatial SDK alone fails because it needs the
 newer AGP/Kotlin/Gradle. Note AGP/Gradle are project-wide, so the `mobile` flavor now
 builds with AGP 8.11.1 too (previously 8.5.1); its output is otherwise unchanged.
+
+**Kotlin 2.4.0 is required, not 2.1.0** (the version the samples pin via a version
+catalog). Kotlin 2.1.0 only supports Gradle up to 8.10; on Gradle 9.4.1 its compiler
+daemon crashes with `NoSuchMethodError (IncrementalCompilationOptions)` /
+`ANALYZED_LINES_NUMBER`. KGP 2.4.0 supports Gradle up to 9.5.0 and is compatible with
+AGP 8.11.1. CI also builds with `--no-daemon` to avoid reusing a stale Kotlin daemon
+from a cached, mismatched toolchain.
 
 To move to a newer Spatial SDK later, open that release's samples
 `gradle/libs.versions.toml`, read its `agp` / `kotlin` versions, and update all four
