@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- View/panel IDs used only by the Quest VR flavor. -->
+<resources>
+    <!-- Registration + entity id for the streaming video panel. Kept in a
+         quest-only resource so the mobile build never generates it. -->
+    <item name="moonlight_video_panel" type="id" />
+</resources>

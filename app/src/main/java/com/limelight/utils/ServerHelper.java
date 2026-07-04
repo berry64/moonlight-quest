@@ -15,6 +15,7 @@ import com.limelight.nvstream.http.HostHttpResponseException;
 import com.limelight.nvstream.http.NvApp;
 import com.limelight.nvstream.http.NvHTTP;
 import com.limelight.nvstream.jni.MoonBridge;
+import com.limelight.vr.VrLaunch;
 
 import org.xmlpull.v1.XmlPullParserException;
 
@@ -54,7 +55,10 @@ public class ServerHelper {
 
     public static Intent createStartIntent(Activity parent, NvApp app, ComputerDetails computer,
                                            ComputerManagerService.ComputerManagerBinder managerBinder) {
-        Intent intent = new Intent(parent, Game.class);
+        // The streaming activity is flavor-specific: the normal build uses Game, while
+        // the Quest VR build uses an immersive activity. VrLaunch resolves the right
+        // class per flavor; both read the identical Game.EXTRA_* extras set below.
+        Intent intent = new Intent(parent, VrLaunch.streamActivityClass());
         intent.putExtra(Game.EXTRA_HOST, computer.activeAddress.address);
         intent.putExtra(Game.EXTRA_PORT, computer.activeAddress.port);
         intent.putExtra(Game.EXTRA_HTTPS_PORT, computer.httpsPort);

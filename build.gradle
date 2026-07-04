@@ -1,11 +1,24 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 buildscript {
+    // Version set required by the Meta Spatial SDK (Quest VR flavor). These MUST move
+    // together: the Spatial SDK 0.13.1 is built against AGP 8.11.1 / Gradle 9.4.1 /
+    // Kotlin 2.1.0 / JDK 17 (per the Meta-Spatial-SDK-Samples). Bumping the Spatial
+    // SDK alone will fail. NOTE: AGP/Gradle apply to the WHOLE project, so the 'mobile'
+    // flavor is also built with AGP 8.11.1 now (it previously used 8.5.1). See
+    // docs/VR_ARCHITECTURE.md. To revert to the original mobile-only toolchain, restore
+    // AGP 8.5.1 + Gradle 8.7 and drop the Kotlin/Spatial plugins.
+    ext.kotlinVersion = '2.1.0'
+    ext.spatialSdkVersion = '0.13.1'
+
     repositories {
         mavenCentral()
         google()
+        gradlePluginPortal()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.5.1'
+        classpath 'com.android.tools.build:gradle:8.11.1'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlinVersion}"
+        classpath "com.meta.spatial.plugin:com.meta.spatial.plugin.gradle.plugin:${spatialSdkVersion}"
     }
 }
 

@@ -1,4 +1,14 @@
 apply plugin: 'com.android.application'
+// Kotlin is only required to compile the Quest VR sources (src/quest/**/*.kt).
+// It applies project-wide, but the default 'mobile' flavor contains no Kotlin
+// sources, so its output is unchanged aside from the Kotlin stdlib.
+apply plugin: 'org.jetbrains.kotlin.android'
+// The Meta Spatial SDK Gradle plugin. Only meaningful for the 'quest' flavor.
+// NOTE (version reconciliation): the Spatial SDK samples build with AGP 8.11+/
+// Gradle 9.4/Kotlin 2.1/JDK 17. This project is on AGP 8.5.1/Gradle 8.7. Building
+// the 'quest' flavor may require bumping AGP/Gradle/Kotlin to versions compatible
+// with the Spatial SDK release you pull. The 'mobile' flavor builds without it.
+apply plugin: 'com.meta.spatial.plugin'
 
 android {
     ndkVersion "27.0.12077973"
@@ -18,7 +28,10 @@ android {
         ndk.debugSymbolLevel = 'FULL'
     }
 
+    // Order matters: variant names read as <root><device><buildType>,
+    // e.g. nonRootMobileDebug, nonRootQuestDebug.
     flavorDimensions.add("root")
+    flavorDimensions.add("device")
 
     buildFeatures {
         buildConfig = true
@@ -52,12 +65,45 @@ android {
             dimension "root"
             buildConfigField "boolean", "ROOT_BUILD", "false"
         }
+
+        // The 'mobile' flavor is the original app, unchanged. It's the default so
+        // existing build commands (and the IDE) keep producing the normal app.
+        mobile {
+            dimension "device"
+            isDefault true
+            buildConfigField "boolean", "VR_BUILD", "false"
+        }
+
+        // The 'quest' flavor adds the Meta Spatial SDK immersive streaming view.
+        // Quest runs Android 10+ (Horizon OS), so raise minSdk here. This flavor's
+        // applicationId suffix keeps it installable alongside the phone build.
+        quest {
+            dimension "device"
+            minSdk 29
+            applicationIdSuffix ".quest"
+            versionNameSuffix "-quest"
+            buildConfigField "boolean", "VR_BUILD", "true"
+        }
+    }
+
+    // 'root' is capped at API 25 (maxSdk 25) while 'quest' requires API 29+, so the
+    // rootQuest* combination is impossible. Drop those variants entirely.
+    variantFilter { variant ->
+        def names = variant.flavors*.name
+        if (names.contains("root") && names.contains("quest")) {
+            setIgnore(true)
+        }
     }
 
     compileOptions {
         encoding "UTF-8"
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
+    }
+
+    // Match the Java bytecode target for the Kotlin sources used by the quest flavor.
+    kotlinOptions {
+        jvmTarget = "11"
     }
 
     lint {
@@ -142,4 +188,17 @@ dependencies {
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     implementation 'org.jmdns:jmdns:3.5.9'
     implementation 'com.github.cgutman:ShieldControllerExtensions:1.0.1'
+
+    // ---- Meta Quest VR (quest flavor only) ----
+    // Scoped to 'questImplementation' so the default 'mobile' build pulls none of
+    // these and stays byte-for-byte identical to the original app.
+    // Versions are centralized in the root build.gradle (ext.spatialSdkVersion /
+    // ext.kotlinVersion) so the plugin and these libraries never drift apart.
+    // See docs/VR_ARCHITECTURE.md for the AGP/Gradle/Kotlin compatibility notes.
+    def spatialSdkVersion = rootProject.ext.spatialSdkVersion
+    questImplementation "com.meta.spatial:meta-spatial-sdk:${spatialSdkVersion}"
+    questImplementation "com.meta.spatial:meta-spatial-sdk-vr:${spatialSdkVersion}"
+    questImplementation "com.meta.spatial:meta-spatial-sdk-toolkit:${spatialSdkVersion}"
+    // Kotlin standard library for the VR sources.
+    questImplementation "org.jetbrains.kotlin:kotlin-stdlib:${rootProject.ext.kotlinVersion}"
 }
