@@ -1,19 +1,23 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 buildscript {
-    // Version set for the Meta Spatial SDK (Quest VR flavor). These MUST move together:
-    //   - Spatial SDK 0.13.1 (built against AGP 8.11.1 / JDK 17, per the samples)
-    //   - Gradle 9.4.1 (gradle-wrapper.properties)
-    //   - AGP 8.11.1
-    //   - Kotlin 2.4.0 — REQUIRED for Gradle 9.x. Kotlin 2.1.0 only supports Gradle up
-    //     to 8.10 and crashes the Kotlin daemon on Gradle 9.4.1 with a NoSuchMethodError
-    //     (IncrementalCompilationOptions) / ANALYZED_LINES_NUMBER. The Meta samples pin
-    //     Kotlin 2.1.0 via a version catalog, but with the plugins on the buildscript
-    //     classpath under Gradle 9.4.1 we need KGP 2.4.0 (supports Gradle up to 9.5.0).
+    // Version set for the Meta Spatial SDK (Quest VR flavor). These MUST be mutually
+    // consistent or the Kotlin buildscript classpath collides. The binding constraint:
+    // the Spatial plugin 0.13.1 pulls kotlin-compiler-embeddable:2.2.0 onto the
+    // buildscript classpath, so the Kotlin Gradle plugin MUST also be 2.2.0 — mixing
+    // Kotlin versions throws IncompatibleClassChangeError (BuildTimeMetric has interface
+    // BuildPerformanceMetric as super class). Kotlin 2.2.0 supports Gradle up to 8.14,
+    // and AGP 8.11.1 needs Gradle >= 8.13 — so Gradle 8.14 is the value that satisfies
+    // both.
+    //   - Spatial SDK 0.13.1
+    //   - AGP        8.11.1   (min Gradle 8.13)
+    //   - Kotlin     2.2.0    (== the compiler the Spatial plugin bundles; max Gradle 8.14)
+    //   - Gradle     8.14     (gradle-wrapper.properties)  [8.13 <= x <= 8.14]
+    //   - JDK        17
     // NOTE: AGP/Gradle apply to the WHOLE project, so the 'mobile' flavor is also built
     // with AGP 8.11.1 now (it previously used 8.5.1). See docs/VR_ARCHITECTURE.md. To
     // revert to the original mobile-only toolchain, restore AGP 8.5.1 + Gradle 8.7 and
     // drop the Kotlin/Spatial plugins.
-    ext.kotlinVersion = '2.4.0'
+    ext.kotlinVersion = '2.2.0'
     ext.spatialSdkVersion = '0.13.1'
 
     repositories {
@@ -25,6 +29,18 @@ buildscript {
         classpath 'com.android.tools.build:gradle:8.11.1'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlinVersion}"
         classpath "com.meta.spatial.plugin:com.meta.spatial.plugin.gradle.plugin:${spatialSdkVersion}"
+    }
+
+    // Belt-and-suspenders: pin EVERY Kotlin artifact on the buildscript classpath to the
+    // single version above, so a transitive kotlin-compiler-embeddable (dragged in by the
+    // Spatial plugin) can never mix Kotlin versions with the Kotlin Gradle plugin.
+    configurations.classpath {
+        resolutionStrategy.eachDependency {
+            if (it.requested.group == 'org.jetbrains.kotlin') {
+                it.useVersion(kotlinVersion)
+                it.because('Keep all Kotlin buildscript artifacts on one version (avoids IncompatibleClassChangeError)')
+            }
+        }
     }
 }
 

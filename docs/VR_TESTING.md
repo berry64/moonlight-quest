@@ -52,25 +52,37 @@ failure in a headless env is the missing Android SDK location.
 | Component | Version | Where it's set |
 |---|---|---|
 | Meta Spatial SDK | **0.13.1** | `ext.spatialSdkVersion` (root `build.gradle`) + `questImplementation` deps |
-| Kotlin | **2.4.0** | `ext.kotlinVersion` (root `build.gradle`) |
+| Kotlin | **2.2.0** | `ext.kotlinVersion` (root `build.gradle`) |
 | Android Gradle Plugin | **8.11.1** | root `build.gradle` classpath |
-| Gradle wrapper | **9.4.1** | `gradle/wrapper/gradle-wrapper.properties` |
+| Gradle wrapper | **8.14** | `gradle/wrapper/gradle-wrapper.properties` |
 | JDK (to run Gradle) | **17** | your machine / `setup-and-build.ps1` |
 
-These MUST move together — bumping the Spatial SDK alone fails because it needs the
-newer AGP/Kotlin/Gradle. Note AGP/Gradle are project-wide, so the `mobile` flavor now
-builds with AGP 8.11.1 too (previously 8.5.1); its output is otherwise unchanged.
+These MUST be mutually consistent. The chain of constraints (learned by iterating on
+CI compiles) is:
 
-**Kotlin 2.4.0 is required, not 2.1.0** (the version the samples pin via a version
-catalog). Kotlin 2.1.0 only supports Gradle up to 8.10; on Gradle 9.4.1 its compiler
-daemon crashes with `NoSuchMethodError (IncrementalCompilationOptions)` /
-`ANALYZED_LINES_NUMBER`. KGP 2.4.0 supports Gradle up to 9.5.0 and is compatible with
-AGP 8.11.1. CI also builds with `--no-daemon` to avoid reusing a stale Kotlin daemon
-from a cached, mismatched toolchain.
+1. **Kotlin must be 2.2.0**, because the Spatial plugin 0.13.1 drags
+   `kotlin-compiler-embeddable:2.2.0` onto the buildscript classpath. Any other Kotlin
+   Gradle plugin version mixes two Kotlin runtimes and throws
+   `IncompatibleClassChangeError: BuildTimeMetric has interface BuildPerformanceMetric
+   as super class` when Gradle tries to create the `KotlinCompile` task. (An earlier
+   attempt with Kotlin 2.4.0 hit exactly this.) The root `build.gradle` also force-pins
+   every `org.jetbrains.kotlin` buildscript artifact to this version as a safeguard.
+2. **Gradle must be 8.13–8.14**: AGP 8.11.1 requires Gradle ≥ 8.13, and Kotlin 2.2.0
+   supports Gradle ≤ 8.14. 8.14 satisfies both. (Gradle 9.4.1 is out: Kotlin 2.2.0
+   doesn't support Gradle 9.x — that caused the earlier
+   `NoSuchMethodError (IncrementalCompilationOptions)` / `ANALYZED_LINES_NUMBER`.)
 
-To move to a newer Spatial SDK later, open that release's samples
-`gradle/libs.versions.toml`, read its `agp` / `kotlin` versions, and update all four
-rows above in lockstep.
+AGP/Gradle are project-wide, so the `mobile` flavor now builds with AGP 8.11.1 too
+(previously 8.5.1); its output is otherwise unchanged. CI also builds with `--no-daemon`
+to avoid reusing a stale daemon from a cached, mismatched toolchain.
+
+To move to a newer Spatial SDK later: check that release's `spatial-gradle-plugin-impl`
+POM for its bundled `kotlin-compiler-embeddable` version, set `ext.kotlinVersion` to
+match, then pick a Gradle version that both that Kotlin release and AGP support.
+
+A benign warning remains: "`kotlin-compiler-embeddable` present in build classpath" —
+that's inherent to how the Spatial plugin bundles the compiler; Meta's own samples emit
+it too. It is not fatal now that the versions match.
 
 ---
 
