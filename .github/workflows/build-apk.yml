@@ -10,7 +10,7 @@ name: Build APK
 
 on:
   push:
-    branches: [ master ]
+    branches: [ feature/quest-vr ]
   pull_request:
   workflow_dispatch:        # lets you trigger a build manually from the Actions tab
 
